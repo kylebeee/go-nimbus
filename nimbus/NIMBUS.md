@@ -298,11 +298,14 @@ algokit compile ts counter.algo.ts --out-dir out
 ```
 
 ```typescript
-import { NimbusClient } from '@akitafoundation/nimbus-hooks'
+import { NimbusClient, NimbusHookFactory } from '@akitafoundation/nimbus-hooks'
 import spec from './out/BlockCounter.arc56.json'
 
-const client = new NimbusClient('http://localhost:4101', 'aaa...')
-await client.deploy({ id: 'block-counter', appSpec: spec })
+const nimbus = new NimbusClient('http://localhost:4101', 'aaa...')
+const factory = new NimbusHookFactory({ appSpec: spec, client: nimbus })
+const hook = await factory.send.deploy({ id: 'block-counter' })
+
+const state = await hook.getState()
 ```
 
 See the [nimbus-hooks](https://github.com/kylebeee/nimbus-hooks) repository for the full SDK, TypeScript client, and additional examples.
@@ -690,23 +693,25 @@ This requires the node to be running in archival mode. The hook will be evaluate
 Using the `@akitafoundation/nimbus-hooks` client:
 
 ```typescript
-import { NimbusClient } from '@akitafoundation/nimbus-hooks'
+import { NimbusClient, NimbusHookClient } from '@akitafoundation/nimbus-hooks'
 
-const client = new NimbusClient(
+const nimbus = new NimbusClient(
   'http://localhost:4101',
   'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 )
 
+const hook = nimbus.getHookClient('counter')
+
 // Get latest state
-const state = await client.getState('counter')
+const state = await hook.getState()
 console.log('Round:', state.round)
 
 // Decode 8-byte big-endian counter
-const counter = NimbusClient.decodeUint64(state.state)
+const counter = NimbusHookClient.decodeUint64(state.state)
 console.log('Counter value:', counter)
 
 // Verify chain integrity
-const result = await client.verify('counter')
+const result = await hook.verify()
 console.log('Chain valid:', result.valid)
 console.log('Entries:', result.entries)
 ```
