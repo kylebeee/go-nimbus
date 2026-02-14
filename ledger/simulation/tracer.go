@@ -150,6 +150,7 @@ func (tracer *evalTracer) populateInnerTransactions(txgroup []transactions.Signe
 }
 
 func (tracer *evalTracer) BeforeTxnGroup(ep *logic.EvalParams) {
+	ep.NimbusMode = tracer.result.EvalOverrides.NimbusMode
 	if ep.GetCaller() != nil {
 		// If this is an inner txn group, save the txns
 		tracer.populateInnerTransactions(ep.TxnGroup)
@@ -557,3 +558,5 @@ func (tracer *evalTracer) AfterProgram(cx *logic.EvalContext, pass bool, evalErr
 }
 
 func (tracer *evalTracer) DetailedEvalErrors() bool { return true }
+
+func (tracer *evalTracer) NimbusMode() bool { return tracer.result.EvalOverrides.NimbusMode }

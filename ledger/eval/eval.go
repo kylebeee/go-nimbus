@@ -656,6 +656,7 @@ type BlockEvaluator struct {
 	state    *roundCowState
 	validate bool
 	generate bool
+	nimbusMode bool
 
 	prevHeader  bookkeeping.BlockHeader // cached
 	proto       config.ConsensusParams
@@ -692,6 +693,7 @@ type EvaluatorOptions struct {
 	MaxTxnBytesPerBlock int
 	ProtoParams         *config.ConsensusParams
 	Tracer              logic.EvalTracer
+	NimbusMode          bool
 }
 
 // StartEvaluator creates a BlockEvaluator, given a ledger and a block header
@@ -740,6 +742,7 @@ func StartEvaluator(l LedgerForEvaluator, hdr bookkeeping.BlockHeader, evalOpts 
 	eval := &BlockEvaluator{
 		validate:   evalOpts.Validate,
 		generate:   evalOpts.Generate,
+		nimbusMode: evalOpts.NimbusMode,
 		prevHeader: prevHeader,
 		block:      bookkeeping.Block{BlockHeader: hdr},
 		specials: transactions.SpecialAddresses{
@@ -1023,6 +1026,7 @@ func (eval *BlockEvaluator) TransactionGroup(txgroup ...transactions.SignedTxnWi
 	defer cow.recycle()
 
 	evalParams := logic.NewAppEvalParams(txgroup, &eval.proto, &eval.specials)
+	evalParams.NimbusMode = eval.nimbusMode
 	evalParams.Tracer = eval.Tracer
 
 	if eval.Tracer != nil {

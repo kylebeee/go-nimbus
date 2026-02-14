@@ -42,12 +42,14 @@ type Request struct {
 	ExtraOpcodeBudget     int
 	TraceConfig           ExecTraceConfig
 	FixSigners            bool
+	NimbusMode            bool
 }
 
 // simulatorLedger patches the ledger interface to use a constant latest round.
 type simulatorLedger struct {
 	*data.Ledger
 	start basics.Round
+	nimbusMode bool
 }
 
 // Latest is part of the ledger.Ledger interface.
@@ -85,6 +87,7 @@ func (l simulatorLedger) StartEvaluator(hdr bookkeeping.BlockHeader, paysetHint,
 			Validate:            true,
 			MaxTxnBytesPerBlock: maxTxnBytesPerBlock,
 			Tracer:              tracer,
+			NimbusMode:          l.nimbusMode,
 		})
 }
 
@@ -120,7 +123,7 @@ type Simulator struct {
 // MakeSimulator creates a new simulator from a ledger.
 func MakeSimulator(ledger *data.Ledger, developerAPI bool) *Simulator {
 	return &Simulator{
-		ledger:       simulatorLedger{ledger, 0}, // start round to be specified in Simulate method
+		ledger:       simulatorLedger{ledger, 0, false}, // start round to be specified in Simulate method
 		developerAPI: developerAPI,
 	}
 }
@@ -265,7 +268,7 @@ func (s Simulator) simulateWithTracer(txgroup []transactions.SignedTxnWithAD, tr
 	}
 
 	// check that the extra budget is not exceeding simulation extra budget limit
-	if overrides.ExtraOpcodeBudget > MaxExtraOpcodeBudget {
+	if !overrides.NimbusMode && overrides.ExtraOpcodeBudget > MaxExtraOpcodeBudget {
 		return nil, InvalidRequestError{
 			SimulatorError{
 				fmt.Errorf(
@@ -295,6 +298,7 @@ func (s Simulator) Simulate(simulateRequest Request) (Result, error) {
 		// Access underlying data.Ledger to get the real latest round
 		s.ledger.start = s.ledger.Ledger.Latest()
 	}
+	s.ledger.nimbusMode = simulateRequest.NimbusMode
 
 	if len(simulateRequest.TxnGroups) != 1 {
 		return Result{}, InvalidRequestError{

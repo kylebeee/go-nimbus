@@ -1,0 +1,29 @@
+name: "nimbus_sandbox"
+
+services:
+  algod:
+    container_name: "nimbus_sandbox_algod"
+    build:
+      context: .
+      dockerfile: docker/nimbus.Dockerfile
+    ports:
+      - "4101:8081"   # Nimbus API
+      - "4102:7833"   # KMD
+      - "4103:8080"   # Relay node API
+    environment:
+      NIMBUS_MODE: "1"
+      START_KMD: "1"
+      TOKEN: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ADMIN_TOKEN: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      KMD_TOKEN: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    init: true
+    volumes:
+      - nimbus-data:/algod
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-H", "X-Algo-API-Token: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "http://localhost:8081/v2/status"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  nimbus-data:

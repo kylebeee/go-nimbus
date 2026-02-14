@@ -146,8 +146,18 @@ func NewRouter(logger logging.Logger, node APINodeInterface, shutdown <-chan str
 	ppublic.RegisterHandlers(e, &v2Handler, publicMiddleware...)
 	pprivate.RegisterHandlers(e, &v2Handler, adminMiddleware...)
 
-	if node.Config().EnableFollowMode {
+	if node.Config().EnableFollowMode || node.Config().EnableNimbusMode {
 		data.RegisterHandlers(e, &v2Handler, publicMiddleware...)
+	}
+
+	if node.Config().EnableNimbusMode {
+		e.GET("/v2/nimbus/hooks", v2Handler.ListNimbusHooks, publicMiddleware...)
+		e.POST("/v2/nimbus/hooks", v2Handler.CreateNimbusHook, adminMiddleware...)
+		e.GET("/v2/nimbus/hooks/:hookID", v2Handler.GetNimbusHook, publicMiddleware...)
+		e.DELETE("/v2/nimbus/hooks/:hookID", v2Handler.DeleteNimbusHook, adminMiddleware...)
+		e.GET("/v2/nimbus/hooks/:hookID/state", v2Handler.GetNimbusHookState, publicMiddleware...)
+		e.GET("/v2/nimbus/hooks/:hookID/history", v2Handler.GetNimbusHookHistory, publicMiddleware...)
+		e.GET("/v2/nimbus/hooks/:hookID/verify", v2Handler.VerifyNimbusHookChain, publicMiddleware...)
 	}
 
 	if node.Config().EnableExperimentalAPI {
@@ -162,6 +172,12 @@ type FollowerNode struct{ *node.AlgorandFollowerNode }
 
 // LedgerForAPI implements the v2.Handlers interface
 func (n FollowerNode) LedgerForAPI() v2.LedgerForAPI { return n.Ledger() }
+
+// NimbusNode wraps the AlgorandNimbusNode to provide v2.NodeInterface.
+type NimbusNode struct{ *node.AlgorandNimbusNode }
+
+// LedgerForAPI implements the v2.Handlers interface
+func (n NimbusNode) LedgerForAPI() v2.LedgerForAPI { return n.Ledger() }
 
 // APINode wraps the AlgorandFullNode to provide v2.NodeInterface.
 type APINode struct{ *node.AlgorandFullNode }

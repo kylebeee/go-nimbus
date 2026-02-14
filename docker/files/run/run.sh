@@ -174,6 +174,9 @@ function start_private_network() {
 
   # TODO: Is there a way to properly exec a private network?
   goal network start -r "${ALGORAND_DATA}/.."
+  if [ "$NIMBUS_MODE" = "1" ] && [ -f "${ALGORAND_DATA}/../nimbus/node.log" ]; then
+    tail -f "${ALGORAND_DATA}/../nimbus/node.log" &
+  fi
   tail -f "${ALGORAND_DATA}/node.log"
 }
 
@@ -182,7 +185,9 @@ function start_new_private_network() {
   if [ -f "/etc/algorand/template.json" ]; then
       cp /etc/algorand/template.json "/node/run/$TEMPLATE"
   else
-      if [ "$DEV_MODE" = "1" ]; then
+      if [ "$NIMBUS_MODE" = "1" ]; then
+          TEMPLATE="nimbusmode_template.json"
+      elif [ "$DEV_MODE" = "1" ]; then
           TEMPLATE="devmode_template.json"
       fi
   fi
@@ -210,6 +215,7 @@ echo "   ALGORAND_DATA:   $ALGORAND_DATA"
 echo "   NETWORK:         $NETWORK"
 echo "   PROFILE:         $PROFILE"
 echo "   DEV_MODE:        $DEV_MODE"
+echo "   NIMBUS_MODE:     $NIMBUS_MODE"
 echo "   START_KMD:       ${START_KMD:-"Not Set"}"
 echo "   FAST_CATCHUP:    $FAST_CATCHUP"
 echo "   TOKEN:           ${TOKEN:-"Not Set"}"

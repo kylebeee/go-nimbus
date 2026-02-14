@@ -1,0 +1,22 @@
+the sdk is the easiest way, payments come from the contract itself
+
+```ts
+import { SubscriptionsSDK, NETWORK_APP_IDS } from 'akita-sdk'
+
+// ...
+
+const { subscriptions: appId } = NETWORK_APP_IDS[network]
+const sdk = new SubscriptionsSDK({
+  factoryParams: { appId },
+  algorand,
+})
+
+const myAddress = ABC...
+const myServiceId = XYZ...
+
+const map = await subscriptions.client.state.box.subscriptions.getMap()
+
+const subscribers = Array.from(map.entries())
+  .filter(([, sub]) => sub.recipient === myAddress && sub.serviceId === myServiceId)
+  .map(([key]) => key.address)
+```

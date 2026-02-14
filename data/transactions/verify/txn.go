@@ -142,6 +142,9 @@ func PrepareGroupContext(group []transactions.SignedTxn, contextHdr *bookkeeping
 
 	ep := logic.NewSigEvalParams(group, &consensusParams, ledger)
 	ep.Tracer = evalTracer
+	if nimbusProvider, ok := evalTracer.(interface{ NimbusMode() bool }); ok && nimbusProvider.NimbusMode() {
+		ep.NimbusMode = true
+	}
 	return &GroupContext{
 		specAddrs: transactions.SpecialAddresses{
 			FeeSink:     contextHdr.FeeSink,

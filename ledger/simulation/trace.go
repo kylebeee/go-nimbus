@@ -18,6 +18,7 @@ package simulation
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/algorand/go-algorand/config/bounds"
 	"github.com/algorand/go-algorand/crypto"
@@ -93,6 +94,7 @@ type ResultEvalOverrides struct {
 	MaxLogSize            *int
 	ExtraOpcodeBudget     int
 	FixSigners            bool
+	NimbusMode            bool
 }
 
 // LogBytesLimit hardcode limit of how much bytes one can log per transaction during simulation (with AllowMoreLogging)
@@ -117,6 +119,11 @@ func (eo ResultEvalOverrides) AllowMoreLogging(allow bool) ResultEvalOverrides {
 // and generate appropriate parameters to override during simulation runtime.
 func (eo ResultEvalOverrides) LogicEvalConstants() logic.EvalConstants {
 	logicEvalConstants := logic.RuntimeEvalConstants()
+	if eo.NimbusMode {
+		logicEvalConstants.MaxLogSize = math.MaxInt
+		logicEvalConstants.MaxLogCalls = math.MaxInt
+		return logicEvalConstants
+	}
 	if eo.MaxLogSize != nil {
 		logicEvalConstants.MaxLogSize = *eo.MaxLogSize
 	}
@@ -210,6 +217,7 @@ func makeSimulationResult(lastRound basics.Round, request Request, developerAPI 
 		ExtraOpcodeBudget:     request.ExtraOpcodeBudget,
 		AllowUnnamedResources: request.AllowUnnamedResources,
 		FixSigners:            request.FixSigners,
+		NimbusMode:            request.NimbusMode,
 	}.AllowMoreLogging(request.AllowMoreLogging)
 
 	if err := validateSimulateRequest(request, developerAPI); err != nil {

@@ -312,6 +312,7 @@ func RuntimeEvalConstants() EvalConstants {
 // EvalParams contains data that comes into condition evaluation.
 type EvalParams struct {
 	runMode RunMode
+	NimbusMode bool
 
 	Proto *config.ConsensusParams
 
@@ -539,6 +540,7 @@ func NewInnerEvalParams(txg []transactions.SignedTxnWithAD, caller *EvalContext)
 
 	ep := &EvalParams{
 		runMode:                 ModeApp,
+		NimbusMode:              caller.NimbusMode,
 		Proto:                   caller.Proto,
 		Trace:                   caller.Trace,
 		TxnGroup:                txg,
@@ -1110,7 +1112,7 @@ func EvalContract(program []byte, gi int, aid basics.AppIndex, params *EvalParam
 	// should never be changed by later transactions.
 	cx.pastScratch[cx.groupIndex] = &cx.Scratch
 
-	if cx.Proto.IsolateClearState && cx.txn.Txn.OnCompletion == transactions.ClearStateOC {
+	if cx.Proto.IsolateClearState && cx.txn.Txn.OnCompletion == transactions.ClearStateOC && !cx.EvalParams.NimbusMode {
 		if cx.PooledApplicationBudget != nil && *cx.PooledApplicationBudget < cx.Proto.MaxAppProgramCost {
 			return false, nil, fmt.Errorf("attempted ClearState execution with low OpcodeBudget %d", *cx.PooledApplicationBudget)
 		}
@@ -1411,7 +1413,7 @@ func check(program []byte, gi int, params *EvalParams, mode RunMode) (err error)
 			return fmt.Errorf("pc=%3d %w", cx.pc, err)
 		}
 		staticCost += stepCost
-		if cx.version < backBranchEnabledVersion && staticCost > maxCost {
+		if !cx.EvalParams.NimbusMode && cx.version < backBranchEnabledVersion && staticCost > maxCost {
 			return fmt.Errorf("pc=%3d static cost budget of %d exceeded", cx.pc, maxCost)
 		}
 		if cx.pc <= prevpc {
@@ -1495,6 +1497,9 @@ func (cx *EvalContext) AppID() basics.AppIndex {
 }
 
 func (cx *EvalContext) remainingBudget() int {
+	if cx.EvalParams.NimbusMode {
+		return math.MaxInt
+	}
 	if cx.runMode == ModeSig {
 		if cx.PooledLogicSigBudget != nil {
 			return *cx.PooledLogicSigBudget
@@ -1567,20 +1572,22 @@ func (cx *EvalContext) step() error {
 		}
 	}
 
-	if opcost > cx.remainingBudget() {
+	if !cx.EvalParams.NimbusMode && opcost > cx.remainingBudget() {
 		return fmt.Errorf("pc=%3d dynamic cost budget exceeded, executing %s: local program cost was %d",
 			cx.pc, spec.Name, cx.cost)
 	}
 
 	cx.cost += opcost
-	// At most one of these pooled budgets will be non-nil, perhaps we could
-	// collapse to one variable, but there are some complex callers trying to
-	// set up big budgets for debugging runs that would have to be looked at.
-	switch {
-	case cx.PooledApplicationBudget != nil:
-		*cx.PooledApplicationBudget -= opcost
-	case cx.PooledLogicSigBudget != nil:
-		*cx.PooledLogicSigBudget -= opcost
+	if !cx.EvalParams.NimbusMode {
+		// At most one of these pooled budgets will be non-nil, perhaps we could
+		// collapse to one variable, but there are some complex callers trying to
+		// set up big budgets for debugging runs that would have to be looked at.
+		switch {
+		case cx.PooledApplicationBudget != nil:
+			*cx.PooledApplicationBudget -= opcost
+		case cx.PooledLogicSigBudget != nil:
+			*cx.PooledLogicSigBudget -= opcost
+		}
 	}
 	preheight := len(cx.Stack)
 	err := spec.op(cx)
@@ -5453,15 +5460,17 @@ func (cx *EvalContext) stackIntoTxnField(sv stackValue, fs *txnFieldSpec, txn *t
 		if sv.Bytes == nil {
 			return fmt.Errorf("ApplicationArg is not a byte array")
 		}
-		total := len(sv.Bytes)
-		for _, arg := range txn.ApplicationArgs {
-			total += len(arg)
-		}
-		if total > cx.Proto.MaxAppTotalArgLen {
-			return errors.New("total application args length too long")
-		}
-		if len(txn.ApplicationArgs) >= cx.Proto.MaxAppArgs {
-			return errors.New("too many application args")
+		if !cx.EvalParams.NimbusMode {
+			total := len(sv.Bytes)
+			for _, arg := range txn.ApplicationArgs {
+				total += len(arg)
+			}
+			if total > cx.Proto.MaxAppTotalArgLen {
+				return errors.New("total application args length too long")
+			}
+			if len(txn.ApplicationArgs) >= cx.Proto.MaxAppArgs {
+				return errors.New("too many application args")
+			}
 		}
 		txn.ApplicationArgs = append(txn.ApplicationArgs, slices.Clone(sv.Bytes))
 	case Accounts:
@@ -5630,7 +5639,7 @@ func opItxnSubmit(cx *EvalContext) (err error) {
 				}
 				depth++
 			}
-			if depth >= maxAppCallDepth {
+			if !cx.EvalParams.NimbusMode && depth >= maxAppCallDepth {
 				return fmt.Errorf("appl depth (%d) exceeded", depth)
 			}
 
