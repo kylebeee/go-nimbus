@@ -177,6 +177,31 @@ Hooks are AVM programs. They are simulated as application call transactions agai
 3. **No side effects**: Hooks run in simulation mode. They cannot modify on-chain state, create inner transactions, or spend funds.
 4. **Execution context**: The sender is the block's fee sink address. The transaction's FirstValid is the current block round.
 
+### Removed AVM Constraints
+
+When running in Nimbus mode, several AVM constraints that normally apply to on-chain smart contracts are removed. This allows hooks to perform arbitrarily complex computations without hitting the limits designed for consensus-critical execution.
+
+| Constraint | Normal AVM Behavior | Nimbus Mode |
+|---|---|---|
+| **Opcode budget** | 700 per app call, pooled across group | Unlimited (`math.MaxInt`) |
+| **Log size** | 1024 bytes per log call | Unlimited |
+| **Log call count** | 32 log calls per execution | Unlimited |
+| **Application args size** | 2048 bytes total across all args | No limit enforced |
+| **Application args count** | 16 args maximum | No limit enforced |
+| **App call depth** | 8 levels of inner app calls | No limit enforced |
+| **Extra opcode budget** | Capped by `MaxExtraOpcodeBudget` | No limit enforced |
+| **ClearState budget isolation** | Separate budget for clear state | Bypassed |
+
+These removals mean your hook programs can:
+
+- Process large amounts of data in a single execution
+- Emit state of any size via `log`
+- Call `log` as many times as needed (only the last log is used as state)
+- Accept arbitrarily large input state via application args
+- Perform deeply nested computations
+
+The only hard constraint is that the program must emit at least one log message, or the evaluation records an error.
+
 ### TEAL Example: Counter Hook
 
 This hook increments a counter each block:

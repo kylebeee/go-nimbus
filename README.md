@@ -35,6 +35,8 @@ A hook is a compiled AVM (TEAL) program registered with a Nimbus node. Every tim
 
 Each evaluation generates a cryptographic receipt that binds the output to the block, forming a tamper-evident chain.
 
+Hooks run with all standard AVM constraints removed -- unlimited opcode budget, unlimited log size and count, no app args limits, and no call depth limit. This allows hooks to perform arbitrarily complex computations. See [nimbus/NIMBUS.md](nimbus/NIMBUS.md) for the full list of removed constraints.
+
 ## Writing Hooks
 
 Hooks can be written in TEAL or Algorand TypeScript using the [`@akitafoundation/nimbus-hooks`](https://github.com/kylebeee/nimbus-hooks) package:
