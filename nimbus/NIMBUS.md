@@ -174,7 +174,7 @@ Hooks are AVM programs. They are simulated as application call transactions agai
 
 1. **Input**: The previous round's state is passed as `ApplicationArgs[0]` (accessible via `txna ApplicationArgs 0` in TEAL or `Txn.applicationArgs(0)` in puya-ts).
 2. **Output**: The last log message emitted by the program becomes the new state. Use `log` in TEAL or the ARC4 return pattern in puya-ts.
-3. **No side effects**: Hooks run in simulation mode. They cannot modify on-chain state, create inner transactions, or spend funds.
+3. **No side effects**: Hooks run in simulation mode. They cannot modify on-chain state or spend funds.
 4. **Execution context**: The sender is the block's fee sink address. The transaction's FirstValid is the current block round.
 
 ### Removed AVM Constraints
