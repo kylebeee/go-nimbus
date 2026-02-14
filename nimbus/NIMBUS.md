@@ -269,7 +269,7 @@ EOF
 
 ### Algorand TypeScript (puya-ts) Hooks
 
-For a higher-level development experience, use the `@akitafoundation/nimbus-hooks` package. Hooks extend `HookContract` instead of `Contract` or `LogicSig`:
+For a higher-level development experience, use the `@akitafoundation/nimbus-hooks` package. Hooks extend `HookContract` instead of `Contract` or `LogicSig`. The only constraint on the `run` method is that the parameter type and return type must match:
 
 ```bash
 npm install @akitafoundation/nimbus-hooks @algorandfoundation/algorand-typescript
@@ -297,7 +297,7 @@ Compile with the AlgoKit CLI:
 algokit compile ts counter.algo.ts --out-dir out
 ```
 
-See the [nimbus-hooks](https://github.com/akita/nimbus-hooks) repository for the full SDK, TypeScript client, and additional examples.
+See the [nimbus-hooks](https://github.com/kylebeee/nimbus-hooks) repository for the full SDK, TypeScript client, and additional examples.
 
 ---
 
