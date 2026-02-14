@@ -69,6 +69,9 @@ type HookInfo struct {
 	CreatedAt     time.Time
 }
 
+// ErrHookNotCaughtUp is returned when a hook is still backfilling from genesis.
+var ErrHookNotCaughtUp = errors.New("hook is still catching up")
+
 // HookManager manages Nimbus hooks and their derived state.
 type HookManager struct {
 	log         logging.Logger
@@ -78,9 +81,10 @@ type HookManager struct {
 	genesisID   string
 	genesisHash crypto.Digest
 
-	mu     sync.RWMutex
-	hooks  map[string]HookDefinition
-	latest map[string]HookState
+	mu          sync.RWMutex
+	hooks       map[string]HookDefinition
+	latest      map[string]HookState
+	backfilling map[string]bool
 
 	workCh chan bookkeeping.BlockHeader
 	stopCh chan struct{}
@@ -103,6 +107,7 @@ func NewHookManager(log logging.Logger, cfg config.Local, ledger *data.Ledger, d
 		genesisHash: genesisHash,
 		hooks:       make(map[string]HookDefinition),
 		latest:      make(map[string]HookState),
+		backfilling: make(map[string]bool),
 		workCh:      make(chan bookkeeping.BlockHeader, hookWorkBuffer),
 		stopCh:      make(chan struct{}),
 	}
@@ -219,10 +224,16 @@ func (m *HookManager) CreateHook(def HookDefinition) error {
 	}
 
 	if def.RequireOrigin || len(def.InitialState) == 0 {
+		m.mu.Lock()
+		m.backfilling[def.ID] = true
+		m.mu.Unlock()
 		go func() {
 			if err := m.backfillHook(def.ID); err != nil {
 				m.log.Warnf("nimbus hook %s backfill failed: %v", def.ID, err)
 			}
+			m.mu.Lock()
+			delete(m.backfilling, def.ID)
+			m.mu.Unlock()
 		}()
 	}
 	return nil
@@ -246,21 +257,32 @@ func (m *HookManager) DeleteHook(id string) error {
 }
 
 // LatestState returns the latest hook state.
-func (m *HookManager) LatestState(id string) (HookState, bool) {
+func (m *HookManager) LatestState(id string) (HookState, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+	if m.backfilling[id] {
+		return HookState{}, ErrHookNotCaughtUp
+	}
 	state, ok := m.latest[id]
-	return state, ok
+	if !ok {
+		return HookState{}, fmt.Errorf("hook %s not found", id)
+	}
+	return state, nil
 }
 
 // History returns hook state history.
 func (m *HookManager) History(id string, from, to *basics.Round) ([]HookState, error) {
 	m.mu.RLock()
 	_, ok := m.hooks[id]
-	m.mu.RUnlock()
 	if !ok {
+		m.mu.RUnlock()
 		return nil, fmt.Errorf("hook %s not found", id)
 	}
+	if m.backfilling[id] {
+		m.mu.RUnlock()
+		return nil, ErrHookNotCaughtUp
+	}
+	m.mu.RUnlock()
 	return m.store.readHistory(id, from, to)
 }
 

@@ -190,9 +190,12 @@ func (v2 *Handlers) GetNimbusHookState(ctx echo.Context) error {
 		return notFound(ctx, errors.New("nimbus hooks disabled"), errInternalFailure, v2.Log)
 	}
 	hookID := ctx.Param("hookID")
-	state, ok := manager.LatestState(hookID)
-	if !ok {
-		return notFound(ctx, errors.New("hook not found"), "hook not found", v2.Log)
+	state, err := manager.LatestState(hookID)
+	if err != nil {
+		if errors.Is(err, nimbus.ErrHookNotCaughtUp) {
+			return ctx.JSON(http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
+		}
+		return notFound(ctx, err, err.Error(), v2.Log)
 	}
 	return ctx.JSON(http.StatusOK, hookStateToResponse(state))
 }
@@ -212,6 +215,9 @@ func (v2 *Handlers) GetNimbusHookHistory(ctx echo.Context) error {
 
 	history, err := manager.History(hookID, from, to)
 	if err != nil {
+		if errors.Is(err, nimbus.ErrHookNotCaughtUp) {
+			return ctx.JSON(http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
+		}
 		return notFound(ctx, err, err.Error(), v2.Log)
 	}
 
