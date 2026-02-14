@@ -46,7 +46,7 @@ import { bytes, btoi, itob, Uint64 } from '@algorandfoundation/algorand-typescri
 import { HookContract } from '@akitafoundation/nimbus-hooks'
 
 class BlockCounter extends HookContract {
-  public run(previousState: bytes): bytes {
+  public program(previousState: bytes): bytes {
     if (previousState.length > 0) {
       const prev = btoi(previousState)
       return itob(prev + Uint64(1))
