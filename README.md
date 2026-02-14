@@ -43,9 +43,9 @@ Hooks can be written in TEAL or Algorand TypeScript using the [`@akitafoundation
 
 ```typescript
 import { bytes, btoi, itob, Uint64 } from '@algorandfoundation/algorand-typescript'
-import { HookContract } from '@akitafoundation/nimbus-hooks'
+import { Hook } from '@akitafoundation/nimbus-hooks'
 
-class BlockCounter extends HookContract {
+class BlockCounter extends Hook {
   public program(previousState: bytes): bytes {
     if (previousState.length > 0) {
       const prev = btoi(previousState)
