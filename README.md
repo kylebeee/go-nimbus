@@ -1,169 +1,138 @@
 
-# go-algorand
-| **Branch**      | **Build Status** |
-| --------------- | ---------------- |
-| **rel/stable**  | [![Nightly Tests](https://github.com/algorand/go-algorand/actions/workflows/ci-nightly.yml/badge.svg?branch=rel%2Fstable)](https://github.com/algorand/go-algorand/actions/workflows/ci-nightly.yml) |
-| **rel/beta**    | [![Nightly Tests](https://github.com/algorand/go-algorand/actions/workflows/ci-nightly.yml/badge.svg?branch=rel%2Fbeta)](https://github.com/algorand/go-algorand/actions/workflows/ci-nightly.yml) |
-| **rel/nightly** | [![Nightly Tests](https://github.com/algorand/go-algorand/actions/workflows/ci-nightly.yml/badge.svg?branch=rel%2Fnightly)](https://github.com/algorand/go-algorand/actions/workflows/ci-nightly.yml) |
+# go-nimbus
 
+A fork of [go-algorand](https://github.com/algorand/go-algorand) that adds programmable hooks with a cryptographic receipt chain. Nimbus hooks are AVM programs that run against every block, producing derived state with tamper-evident receipts.
 
-**Algorand's** official implementation in Go.
+## Quick Start
 
-Algorand is a permissionless, pure proof-of-stake blockchain that delivers decentralization, scalability, security, and transaction finality.
+Start a local Nimbus network with Docker:
 
-## Getting Started
+```bash
+docker compose -f docker-compose.nimbus.yml up -d
+```
 
-Visit our [developer website](https://dev.algorand.co/) for the most up-to-date information about using and installing the Algorand platform.
+| Service     | Host Port | Description       |
+|-------------|-----------|-------------------|
+| Nimbus API  | 4101      | Hook management   |
+| KMD         | 4102      | Key management    |
+| Relay API   | 4103      | Consensus node    |
+
+All endpoints use the dev token: `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`
+
+```bash
+# Check status
+curl -s -H "X-Algo-API-Token: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+  http://localhost:4101/v2/status
+
+# List hooks
+curl -s -H "X-Algo-API-Token: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+  http://localhost:4101/v2/nimbus/hooks
+```
+
+## What is a Hook?
+
+A hook is a compiled AVM (TEAL) program registered with a Nimbus node. Every time the node receives a new block, it evaluates each hook by simulating an application call. The hook receives the previous round's state as input (`ApplicationArgs[0]`) and produces new state as output (its last log message).
+
+Each evaluation generates a cryptographic receipt that binds the output to the block, forming a tamper-evident chain.
+
+## Writing Hooks
+
+Hooks can be written in TEAL or Algorand TypeScript using the [`@akitafoundation/nimbus-hooks`](https://github.com/kylebeee/nimbus-hooks) package:
+
+```typescript
+import { bytes, btoi, itob, Uint64 } from '@algorandfoundation/algorand-typescript'
+import { HookContract } from '@akitafoundation/nimbus-hooks'
+
+class BlockCounter extends HookContract {
+  public run(previousState: bytes): bytes {
+    if (previousState.length > 0) {
+      const prev = btoi(previousState)
+      return itob(prev + Uint64(1))
+    }
+    return itob(Uint64(1))
+  }
+}
+```
+
+## API Endpoints
+
+| Method   | Path                                | Auth   | Description                   |
+|----------|-------------------------------------|--------|-------------------------------|
+| `GET`    | `/v2/nimbus/hooks`                  | Public | List all hooks                |
+| `POST`   | `/v2/nimbus/hooks`                  | Admin  | Register a new hook           |
+| `GET`    | `/v2/nimbus/hooks/:id`              | Public | Get hook metadata             |
+| `DELETE` | `/v2/nimbus/hooks/:id`              | Admin  | Delete a hook                 |
+| `GET`    | `/v2/nimbus/hooks/:id/state`        | Public | Get latest hook state         |
+| `GET`    | `/v2/nimbus/hooks/:id/history`      | Public | Get state history (from/to)   |
+| `GET`    | `/v2/nimbus/hooks/:id/verify`       | Public | Verify receipt chain          |
+
+## Documentation
+
+See [nimbus/NIMBUS.md](nimbus/NIMBUS.md) for full documentation including:
+
+- Manual node setup (without Docker)
+- TEAL hook examples with compilation instructions
+- Detailed API reference with curl examples
+- Receipt chain cryptography and verification
+- Configuration reference
+- End-to-end walkthroughs in JavaScript and Python
+- Troubleshooting
 
 ## Building from Source
 
-Development is done using the Go Programming Language. The Go version is specified in the project's [go.mod](go.mod) file. This document assumes you have a functioning environment set up. If you need assistance setting up an environment, please visit the [official Go documentation website](https://golang.org/doc/).
-
-### Linux / OSX
-
-We currently strive to support Debian-based distributions, with Ubuntu 24.04 as our official release target. Building on Arch Linux also works well. Our core engineering team uses Linux and OSX, so both environments are well-supported for development.
-
-**OSX Only**: [Homebrew (brew)](https://brew.sh) must be installed before continuing. [Here](https://docs.brew.sh/Installation) are the installation requirements.
-
-### Initial Environment Setup
-
 ```bash
-git clone https://github.com/algorand/go-algorand
-cd go-algorand
+git clone https://github.com/kylebeee/go-nimbus
+cd go-nimbus
 ./scripts/configure_dev.sh
+make build
 ```
 
-At this point, you are ready to build go-algorand. We use `make` and have several targets to automate common tasks.
-
-### Build
+## Running Tests
 
 ```bash
-make install
-```
+# All nimbus tests
+go test ./nimbus/...
 
-### Test
+# Hook API tests
+go test ./daemon/algod/api/server/v2/test/ -run TestNimbus
 
-```bash
-# Unit tests
+# Full test suite
 make test
-
-# Integration tests
-make integration
 ```
 
-### Style and Checks
+## Docker Commands
 
 ```bash
-make fmt
-make lint
-make fix
-make vet
+# Start
+docker compose -f docker-compose.nimbus.yml up -d
+
+# Rebuild after code changes
+docker compose -f docker-compose.nimbus.yml up -d --build
+
+# Stop (preserves data)
+docker compose -f docker-compose.nimbus.yml down
+
+# Stop and wipe data
+docker compose -f docker-compose.nimbus.yml down -v
+
+# View logs
+docker logs nimbus_sandbox_algod
+
+# Check both internal nodes
+docker exec nimbus_sandbox_algod goal network status -r /algod
 ```
 
-Alternatively, run:
+## Upstream
+
+This is a fork of [algorand/go-algorand](https://github.com/algorand/go-algorand). To sync with upstream:
 
 ```bash
-make sanity
+git fetch upstream
+git merge upstream/master
 ```
-
-## Running a Node
-
-Once the software is built, you'll find binaries in `${GOPATH}/bin`, and a data directory will be initialized at `~/.algorand`. Start your node with:
-
-```bash
-${GOPATH}/bin/goal node start -d ~/.algorand
-```
-
-Use:
-
-```bash
-${GOPATH}/bin/carpenter -d ~/.algorand
-```
-
-to see activity. Refer to the [developer website](https://developer.algorand.org/) for instructions on using different tools.
-
-### Providing Your Own Data Directory
-
-You can run a node out of other directories than `~/.algorand` and join networks other than mainnet. Just make a new directory and copy the `genesis.json` file for the network into it. For example:
-
-```bash
-mkdir ~/testnet_data
-cp installer/genesis/testnet/genesis.json ~/testnet_data/genesis.json
-${GOPATH}/bin/goal node start -d ~/testnet_data
-```
-
-Genesis files for mainnet, testnet, and betanet can be found in `installer/genesis/`.
-
-## Contributing
-
-Please refer to our [CONTRIBUTING](CONTRIBUTING.md) document.
-
-## Project Layout
-
-`go-algorand` is organized into various subsystems and packages:
-
-### Core
-
-Provides core functionality to the `algod` and `kmd` daemons, as well as other tools and commands:
-
-- **crypto**: Contains the cryptographic constructions used for hashing, signatures, and VRFs. It also includes Algorand-specific details about spending keys, protocol keys, one-time-use signing keys, and how they relate to each other.
-- **config**: Holds configuration parameters, including those used locally by the node and those that must be agreed upon by the protocol.
-- **data**: Defines various types used throughout the codebase.
-  - **basics**: Holds basic types such as MicroAlgos, account data, and addresses.
-  - **account**: Defines accounts, including "root" accounts (which can spend money) and "participation" accounts (which can participate in the agreement protocol).
-  - **transactions**: Defines transactions that accounts can issue against the Algorand state, including standard payments and participation key registration transactions.
-  - **bookkeeping**: Defines blocks, which are batches of transactions atomically committed to Algorand.
-  - **pools**: Implements the transaction pool, holding transactions seen by a node in memory before they are proposed in a block.
-  - **committee**: Implements the credentials that authenticate a participating account's membership in the agreement protocol.
-- **ledger** ([README](ledger/README.md)): Contains the Algorand Ledger state machine, which holds the sequence of blocks. The Ledger executes the state transitions resulting from applying these blocks. It answers queries on blocks (e.g., what transactions were in the last committed block?) and on accounts (e.g., what is my balance?).
-- **protocol**: Declares constants used to identify protocol versions, tags for routing network messages, and prefixes for domain separation of cryptographic inputs. It also implements the canonical encoder.
-- **network**: Contains the code for participating in a mesh network based on WebSockets. It maintains connections to some number of peers, (optionally) accepts connections from peers, sends point-to-point and broadcast messages, and receives messages, routing them to various handler code (e.g., agreement/gossip/network.go registers three handlers).
-  - **rpcs**: Contains the HTTP RPCs used by `algod` processes to query one another.
-- **agreement** ([README](agreement/README.md)): Contains the agreement service, which implements Algorand's Byzantine Agreement protocol. This protocol allows participating accounts to quickly confirm blocks in a fork-safe manner, provided that sufficient account stake is correctly executing the protocol.
-- **node**: Integrates the components above and handles initialization and shutdown. It provides queries into these components.
-
-### Daemon
-
-Contains the two daemons that provide Algorand clients with services:
-
-- **daemon/algod**: Holds the `algod` daemon, which implements a participating node. `algod` allows a node to participate in the agreement protocol, submit and confirm transactions, and view the state of the Algorand Ledger.
-  - **daemon/algod/api** ([README](daemon/algod/api/README.md)): The REST interface used for interactions with `algod`.
-- **daemon/kmd** ([README](daemon/kmd/README.md)): Holds the `kmd` daemon, which allows a node to sign transactions. Since `kmd` is separate from `algod`, it enables a user to sign transactions on an air-gapped computer.
-
-### Interfacing
-
-Enables developers to interface with the Algorand system:
-
-- **cmd**: Contains the primary commands defining entry points into the system.
-- **libgoal**: Exports a Go interface useful for developers of Algorand clients.
-- **tools** ([README](tools/README.md)): Various tools and utilities that don’t have a better place to go.
-- **tools/debug**: Holds secondary commands that assist developers during debugging.
-- **tools/misc** ([README](tools/misc/README.md)): Small tools that are handy in a pinch.
-
-### Deployment
-
-Helps Algorand developers deploy networks of their own:
-
-- **nodecontrol**
-- **docker**
-- **netdeploy**
-
-### Utilities
-
-Provides utilities for the various components:
-
-- **logging**: A wrapper around `logrus`.
-- **util**: Contains a variety of utilities, including a codec, a SQLite wrapper, a goroutine pool, a timer interface, node metrics, and more.
-
-### Test
-
-- **test** ([README](test/README.md)): Contains end-to-end tests and utilities for the above components.
 
 ## License
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](COPYING)
 
-Please see the [COPYING_FAQ](COPYING_FAQ) for details on how to apply our license.
-
 Copyright (C) 2019-2026, Algorand Inc.
-

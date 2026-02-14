@@ -244,16 +244,16 @@ EOF
 
 ### Algorand TypeScript (puya-ts) Hooks
 
-For a higher-level development experience, use the `@akita/nimbus-hooks` package. Hooks extend `HookContract` instead of `Contract` or `LogicSig`:
+For a higher-level development experience, use the `@akitafoundation/nimbus-hooks` package. Hooks extend `HookContract` instead of `Contract` or `LogicSig`:
 
 ```bash
-npm install @akita/nimbus-hooks @algorandfoundation/algorand-typescript
+npm install @akitafoundation/nimbus-hooks @algorandfoundation/algorand-typescript
 ```
 
 ```typescript
 // counter.algo.ts
 import { bytes, btoi, itob, Uint64 } from '@algorandfoundation/algorand-typescript'
-import { HookContract } from '@akita/nimbus-hooks'
+import { HookContract } from '@akitafoundation/nimbus-hooks'
 
 class BlockCounter extends HookContract {
   public run(previousState: bytes): bytes {
