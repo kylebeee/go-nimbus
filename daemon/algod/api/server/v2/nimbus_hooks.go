@@ -50,6 +50,7 @@ type nimbusHookStateResponse struct {
 	Round       basics.Round `json:"round"`
 	State       string       `json:"state,omitempty"`
 	Error       string       `json:"error,omitempty"`
+	CatchingUp  bool         `json:"catching-up,omitempty"`
 	Timestamp   string       `json:"timestamp"`
 	BlockHash   string       `json:"block-hash,omitempty"`
 	ProgramHash string       `json:"program-hash,omitempty"`
@@ -184,6 +185,7 @@ func (v2 *Handlers) DeleteNimbusHook(ctx echo.Context) error {
 }
 
 // GetNimbusHookState returns the latest hook state.
+// During backfill this returns whatever has been processed so far with catching-up set.
 func (v2 *Handlers) GetNimbusHookState(ctx echo.Context) error {
 	manager, ok := v2.hookManager()
 	if !ok {
@@ -192,15 +194,15 @@ func (v2 *Handlers) GetNimbusHookState(ctx echo.Context) error {
 	hookID := ctx.Param("hookID")
 	state, err := manager.LatestState(hookID)
 	if err != nil {
-		if errors.Is(err, nimbus.ErrHookNotCaughtUp) {
-			return ctx.JSON(http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
-		}
 		return notFound(ctx, err, err.Error(), v2.Log)
 	}
-	return ctx.JSON(http.StatusOK, hookStateToResponse(state))
+	resp := hookStateToResponse(state)
+	resp.CatchingUp = manager.IsBackfilling(hookID)
+	return ctx.JSON(http.StatusOK, resp)
 }
 
 // GetNimbusHookHistory returns hook state history.
+// During backfill this returns whatever history has been processed so far.
 func (v2 *Handlers) GetNimbusHookHistory(ctx echo.Context) error {
 	manager, ok := v2.hookManager()
 	if !ok {
@@ -215,9 +217,6 @@ func (v2 *Handlers) GetNimbusHookHistory(ctx echo.Context) error {
 
 	history, err := manager.History(hookID, from, to)
 	if err != nil {
-		if errors.Is(err, nimbus.ErrHookNotCaughtUp) {
-			return ctx.JSON(http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
-		}
 		return notFound(ctx, err, err.Error(), v2.Log)
 	}
 

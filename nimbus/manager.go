@@ -69,9 +69,6 @@ type HookInfo struct {
 	CreatedAt     time.Time
 }
 
-// ErrHookNotCaughtUp is returned when a hook is still backfilling from genesis.
-var ErrHookNotCaughtUp = errors.New("hook is still catching up")
-
 // HookManager manages Nimbus hooks and their derived state.
 type HookManager struct {
 	log         logging.Logger
@@ -86,7 +83,7 @@ type HookManager struct {
 	latest      map[string]HookState
 	backfilling map[string]bool
 
-	workCh chan bookkeeping.BlockHeader
+	workCh chan bookkeeping.Block
 	stopCh chan struct{}
 }
 
@@ -108,7 +105,7 @@ func NewHookManager(log logging.Logger, cfg config.Local, ledger *data.Ledger, d
 		hooks:       make(map[string]HookDefinition),
 		latest:      make(map[string]HookState),
 		backfilling: make(map[string]bool),
-		workCh:      make(chan bookkeeping.BlockHeader, hookWorkBuffer),
+		workCh:      make(chan bookkeeping.Block, hookWorkBuffer),
 		stopCh:      make(chan struct{}),
 	}
 
@@ -146,10 +143,10 @@ func (m *HookManager) Stop() {
 // OnNewBlock implements ledgercore.BlockListener.
 func (m *HookManager) OnNewBlock(block bookkeeping.Block, _ ledgercore.StateDelta) {
 	select {
-	case m.workCh <- block.BlockHeader:
+	case m.workCh <- block:
 	default:
 		go func() {
-			m.workCh <- block.BlockHeader
+			m.workCh <- block
 		}()
 	}
 }
@@ -257,12 +254,10 @@ func (m *HookManager) DeleteHook(id string) error {
 }
 
 // LatestState returns the latest hook state.
+// During backfill this returns whatever has been processed so far.
 func (m *HookManager) LatestState(id string) (HookState, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	if m.backfilling[id] {
-		return HookState{}, ErrHookNotCaughtUp
-	}
 	state, ok := m.latest[id]
 	if !ok {
 		return HookState{}, fmt.Errorf("hook %s not found", id)
@@ -270,17 +265,21 @@ func (m *HookManager) LatestState(id string) (HookState, error) {
 	return state, nil
 }
 
+// IsBackfilling reports whether a hook is still catching up from genesis.
+func (m *HookManager) IsBackfilling(id string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.backfilling[id]
+}
+
 // History returns hook state history.
+// During backfill this returns whatever history has been processed so far.
 func (m *HookManager) History(id string, from, to *basics.Round) ([]HookState, error) {
 	m.mu.RLock()
 	_, ok := m.hooks[id]
 	if !ok {
 		m.mu.RUnlock()
 		return nil, fmt.Errorf("hook %s not found", id)
-	}
-	if m.backfilling[id] {
-		m.mu.RUnlock()
-		return nil, ErrHookNotCaughtUp
 	}
 	m.mu.RUnlock()
 	return m.store.readHistory(id, from, to)
@@ -302,13 +301,13 @@ func (m *HookManager) run() {
 		select {
 		case <-m.stopCh:
 			return
-		case hdr := <-m.workCh:
-			m.processHeader(hdr)
+		case block := <-m.workCh:
+			m.processBlock(block)
 		}
 	}
 }
 
-func (m *HookManager) processHeader(hdr bookkeeping.BlockHeader) {
+func (m *HookManager) processBlock(block bookkeeping.Block) {
 	m.mu.RLock()
 	hooks := make([]HookDefinition, 0, len(m.hooks))
 	for _, def := range m.hooks {
@@ -318,7 +317,7 @@ func (m *HookManager) processHeader(hdr bookkeeping.BlockHeader) {
 
 	for _, def := range hooks {
 		prev := m.getLatestState(def.ID)
-		next := m.evaluateHook(def, hdr, prev)
+		next := m.evaluateHook(def, block, prev)
 		m.mu.Lock()
 		m.latest[def.ID] = next
 		m.mu.Unlock()
@@ -338,7 +337,8 @@ func (m *HookManager) getLatestState(id string) HookState {
 	return state
 }
 
-func (m *HookManager) evaluateHook(def HookDefinition, hdr bookkeeping.BlockHeader, prev HookState) HookState {
+func (m *HookManager) evaluateHook(def HookDefinition, block bookkeeping.Block, prev HookState) HookState {
+	hdr := block.BlockHeader
 	now := time.Now()
 	state := HookState{
 		Round:     hdr.Round,
@@ -353,6 +353,8 @@ func (m *HookManager) evaluateHook(def HookDefinition, hdr bookkeeping.BlockHead
 		return state
 	}
 
+	txnTypes := encodeBlockTransactions(block)
+
 	tx := txntest.Txn{
 		Type:              protocol.ApplicationCallTx,
 		Sender:            hdr.FeeSink,
@@ -361,7 +363,7 @@ func (m *HookManager) evaluateHook(def HookDefinition, hdr bookkeeping.BlockHead
 		GenesisHash:       m.genesisHash,
 		ApplicationID:     0,
 		OnCompletion:      transactions.NoOpOC,
-		ApplicationArgs:   [][]byte{prev.State},
+		ApplicationArgs:   [][]byte{prev.State, txnTypes},
 		ApprovalProgram:   def.Program,
 		ClearStateProgram: def.Program,
 	}
@@ -399,6 +401,32 @@ func (m *HookManager) evaluateHook(def HookDefinition, hdr bookkeeping.BlockHead
 	return state
 }
 
+// txTypeEnum maps protocol transaction types to single-byte enum values.
+// Hooks receive this in ApplicationArgs[1]: one byte per transaction in the block.
+var txTypeEnum = map[protocol.TxType]byte{
+	protocol.PaymentTx:         0x01,
+	protocol.KeyRegistrationTx: 0x02,
+	protocol.AssetConfigTx:     0x03,
+	protocol.AssetTransferTx:   0x04,
+	protocol.AssetFreezeTx:     0x05,
+	protocol.ApplicationCallTx: 0x06,
+	protocol.StateProofTx:      0x07,
+	protocol.HeartbeatTx:       0x08,
+}
+
+// encodeBlockTransactions encodes the transaction types from a block as a
+// packed byte array with one byte per transaction. The byte values correspond
+// to txTypeEnum. Unknown types encode as 0x00.
+func encodeBlockTransactions(block bookkeeping.Block) []byte {
+	out := make([]byte, len(block.Payset))
+	for i, txib := range block.Payset {
+		if b, ok := txTypeEnum[txib.Txn.Type]; ok {
+			out[i] = b
+		}
+	}
+	return out
+}
+
 func (m *HookManager) backfillHook(id string) error {
 	m.mu.RLock()
 	def, ok := m.hooks[id]
@@ -409,12 +437,12 @@ func (m *HookManager) backfillHook(id string) error {
 
 	latestRound := m.ledger.Latest()
 	for round := basics.Round(1); round <= latestRound; round++ {
-		hdr, err := m.ledger.BlockHdr(round)
+		block, err := m.ledger.Block(round)
 		if err != nil {
 			return err
 		}
 		prev := m.getLatestState(def.ID)
-		next := m.evaluateHook(def, hdr, prev)
+		next := m.evaluateHook(def, block, prev)
 		m.mu.Lock()
 		m.latest[def.ID] = next
 		m.mu.Unlock()

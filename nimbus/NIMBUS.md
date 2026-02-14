@@ -173,9 +173,28 @@ curl -s \
 Hooks are AVM programs. They are simulated as application call transactions against the ledger state at each block round. The key differences from a normal smart contract:
 
 1. **Input**: The previous round's state is passed as `ApplicationArgs[0]` (accessible via `txna ApplicationArgs 0` in TEAL or `Txn.applicationArgs(0)` in puya-ts).
-2. **Output**: The last log message emitted by the program becomes the new state. Use `log` in TEAL or the ARC4 return pattern in puya-ts.
-3. **No side effects**: Hooks run in simulation mode. They cannot modify on-chain state or spend funds.
-4. **Execution context**: The sender is the block's fee sink address. The transaction's FirstValid is the current block round.
+2. **Block transactions**: The block's transaction types are passed as `ApplicationArgs[1]` -- one byte per transaction. See [Transaction Type Encoding](#transaction-type-encoding) below.
+3. **Output**: The last log message emitted by the program becomes the new state. Use `log` in TEAL or the ARC4 return pattern in puya-ts.
+4. **No side effects**: Hooks run in simulation mode. They cannot modify on-chain state or spend funds.
+5. **Execution context**: The sender is the block's fee sink address. The transaction's FirstValid is the current block round.
+
+### Transaction Type Encoding
+
+`ApplicationArgs[1]` contains one byte per transaction in the block, encoding its type:
+
+| Byte Value | Transaction Type |
+|------------|-----------------|
+| `0x00`     | Unknown         |
+| `0x01`     | Payment (`pay`) |
+| `0x02`     | Key Registration (`keyreg`) |
+| `0x03`     | Asset Config (`acfg`) |
+| `0x04`     | Asset Transfer (`axfer`) |
+| `0x05`     | Asset Freeze (`afrz`) |
+| `0x06`     | Application Call (`appl`) |
+| `0x07`     | State Proof (`stpf`) |
+| `0x08`     | Heartbeat (`hb`) |
+
+The length of `ApplicationArgs[1]` equals the number of transactions in the block. For blocks with no transactions, it is empty (length 0).
 
 ### Removed AVM Constraints
 
@@ -291,6 +310,29 @@ class BlockCounter extends Hook {
 }
 ```
 
+Hooks can access block transactions via `this.blockTransactions`:
+
+```typescript
+// payment-counter.algo.ts
+import { bytes, btoi, itob, op, Uint64 } from '@algorandfoundation/algorand-typescript'
+import { Hook } from '@akitafoundation/nimbus-hooks'
+
+class PaymentCounter extends Hook {
+  public program(previousState: bytes): bytes {
+    let count = previousState.length > 0 ? btoi(previousState) : Uint64(0)
+
+    const txns = this.blockTransactions
+    for (let i = Uint64(0); i < txns.length; i = i + Uint64(1)) {
+      if (op.getByte(txns, i) === Uint64(1)) {
+        count = count + Uint64(1)
+      }
+    }
+
+    return itob(count)
+  }
+}
+```
+
 Compile with the AlgoKit CLI and deploy using the client:
 
 ```bash
@@ -365,7 +407,7 @@ Request body (JSON):
 | `require-origin` | boolean | no       | Force backfill from genesis even with initial state  |
 | `initial-state`  | string  | no       | Base64-encoded seed state for the first evaluation. If omitted, the hook backfills from genesis automatically |
 
-When a hook is created without `initial-state`, it backfills from genesis in the background. The node must be running in archival mode. While the hook is catching up, state and history requests return **503 Service Unavailable**. Once backfill completes, the hook begins processing new blocks normally.
+When a hook is created without `initial-state`, it backfills from genesis in the background. The node must be running in archival mode. While the hook is catching up, state and history responses include `"catching-up": true`. You can poll the state endpoint to observe backfill progress. Once backfill completes, `catching-up` is omitted and the hook begins processing new blocks normally.
 
 ```bash
 curl -s -X POST \
@@ -433,6 +475,7 @@ Response:
   "round": 42,
   "state": "AAAAAAAAACU=",
   "error": "",
+  "catching-up": false,
   "timestamp": "2026-02-13T17:23:05.123456Z",
   "block-hash": "blN1+1hy7RLkvY...",
   "program-hash": "47DEQpj8HBSa...",
@@ -442,7 +485,7 @@ Response:
 }
 ```
 
-The `state` field is base64-encoded. For the counter example, decode it to get an 8-byte big-endian uint64.
+The `state` field is base64-encoded. For the counter example, decode it to get an 8-byte big-endian uint64. When `catching-up` is `true`, the hook is still backfilling from genesis and the state reflects the latest processed round, not the chain tip.
 
 ### Get State History
 
@@ -665,7 +708,7 @@ curl -s \
 
 When a hook is deployed **without** `initial-state`, it automatically backfills from genesis. The hook is evaluated against every historical block from round 1 to the current round before it begins processing new blocks. This happens in the background -- the API returns immediately.
 
-While the hook is catching up, state and history requests return **503 Service Unavailable** with `{"error": "hook is still catching up"}`. Once backfill completes, the hook becomes available for queries.
+While the hook is catching up, the state and history endpoints return whatever has been processed so far. The state response includes `"catching-up": true` so clients can distinguish between a hook that is still backfilling and one that is fully synced. You can poll the state endpoint to observe backfill progress in real time.
 
 Backfill requires the node to be running in archival mode.
 
@@ -774,9 +817,9 @@ The node is not running in Nimbus mode. Ensure `EnableNimbusMode` is set to `tru
 
 Hooks without `initial-state` backfill from genesis, which requires archival mode. Either set `Archival: true` in the node config or provide an `initial-state` to skip backfill.
 
-### "hook is still catching up" (503)
+### State response shows `"catching-up": true`
 
-The hook is backfilling from genesis and has not yet processed all historical blocks. State and history are unavailable until backfill completes. Wait for the hook to finish catching up and retry.
+The hook is backfilling from genesis and has not yet processed all historical blocks. The state reflects the latest processed round, not the chain tip. You can poll the state endpoint to observe progress. Once backfill completes, `catching-up` is omitted from the response.
 
 ### "hook did not emit ARC4 ABI log output"
 

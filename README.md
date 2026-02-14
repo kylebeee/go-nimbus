@@ -31,7 +31,7 @@ curl -s -H "X-Algo-API-Token: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 
 ## What is a Hook?
 
-A hook is a compiled AVM (TEAL) program registered with a Nimbus node. Every time the node receives a new block, it evaluates each hook by simulating an application call. The hook receives the previous round's state as input (`ApplicationArgs[0]`) and produces new state as output (its last log message).
+A hook is a compiled AVM (TEAL) program registered with a Nimbus node. Every time the node receives a new block, it evaluates each hook by simulating an application call. The hook receives the previous round's state as input (`ApplicationArgs[0]`) and the block's transaction types as `ApplicationArgs[1]` (one byte per transaction). It produces new state as output (its last log message).
 
 Each evaluation generates a cryptographic receipt that binds the output to the block, forming a tamper-evident chain.
 
