@@ -362,8 +362,10 @@ Request body (JSON):
 |------------------|---------|----------|-----------------------------------------------------|
 | `id`             | string  | yes      | Unique identifier for the hook                      |
 | `program`        | string  | yes      | Base64-encoded compiled TEAL bytecode               |
-| `require-origin` | boolean | no       | If true, backfills from genesis (requires archival)  |
-| `initial-state`  | string  | no       | Base64-encoded seed state for the first evaluation   |
+| `require-origin` | boolean | no       | Force backfill from genesis even with initial state  |
+| `initial-state`  | string  | no       | Base64-encoded seed state for the first evaluation. If omitted, the hook backfills from genesis automatically |
+
+When a hook is created without `initial-state`, it backfills from genesis in the background. The node must be running in archival mode. While the hook is catching up, state and history requests return **503 Service Unavailable**. Once backfill completes, the hook begins processing new blocks normally.
 
 ```bash
 curl -s -X POST \
@@ -577,7 +579,7 @@ These config fields control Nimbus behavior. Set them in `config.json` or via th
 |-------------------------|------|---------|------------------------------------------------------|
 | `EnableNimbusMode`      | bool | false   | Enables hook management and evaluation               |
 | `EnableFollowMode`      | bool | false   | Required. Nimbus extends follower mode               |
-| `Archival`              | bool | false   | Required for hooks with `require-origin: true`       |
+| `Archival`              | bool | false   | Required for hooks that backfill from genesis        |
 | `EnableDeveloperAPI`    | bool | false   | Enables simulation APIs used by hook evaluation      |
 | `EnableTxnEvalTracer`   | bool | false   | Enables transaction evaluation tracing               |
 | `EndpointAddress`       | str  | ""      | API listen address (e.g. `0.0.0.0:8081`)             |
@@ -659,9 +661,17 @@ curl -s \
   http://localhost:4101/v2/nimbus/hooks/counter/history
 ```
 
+### Backfill Behavior
+
+When a hook is deployed **without** `initial-state`, it automatically backfills from genesis. The hook is evaluated against every historical block from round 1 to the current round before it begins processing new blocks. This happens in the background -- the API returns immediately.
+
+While the hook is catching up, state and history requests return **503 Service Unavailable** with `{"error": "hook is still catching up"}`. Once backfill completes, the hook becomes available for queries.
+
+Backfill requires the node to be running in archival mode.
+
 ### Hook with Initial State
 
-Pass a seed value that the hook receives on its first evaluation:
+Pass a seed value to skip backfill and start the hook immediately at the current round:
 
 ```bash
 # Base64-encode the initial state
@@ -673,20 +683,18 @@ curl -s -X POST \
   "$NIMBUS_URL/v2/nimbus/hooks"
 ```
 
-The hook's first `ApplicationArgs[0]` will contain the bytes `hello world`.
+The hook's first `ApplicationArgs[0]` will contain the bytes `hello world`. No backfill occurs -- the hook is immediately available.
 
-### Hook with Origin Backfill
+### Force Backfill with Initial State
 
-For hooks that need to process the entire chain from genesis:
+To provide an initial state but still backfill from genesis, set `require-origin` to `true`:
 
 ```bash
 curl -s -X POST \
   -H "X-Algo-API-Token: $NIMBUS_TOKEN" \
-  -d "{\"id\":\"full-history\",\"program\":\"$PROGRAM\",\"require-origin\":true}" \
+  -d "{\"id\":\"full-history\",\"program\":\"$PROGRAM\",\"initial-state\":\"$SEED\",\"require-origin\":true}" \
   "$NIMBUS_URL/v2/nimbus/hooks"
 ```
-
-This requires the node to be running in archival mode. The hook will be evaluated against every block from round 1 to the current round before it begins processing new blocks.
 
 ### Reading State from TypeScript
 
@@ -762,9 +770,13 @@ print(f"Chain valid: {result['valid']}, entries: {result['entries']}")
 
 The node is not running in Nimbus mode. Ensure `EnableNimbusMode` is set to `true` in the node's config. When using Docker, set the `NIMBUS_MODE=1` environment variable.
 
-### "archival mode required for origin hooks"
+### "archival mode required for hooks without initial state"
 
-You tried to create a hook with `require-origin: true` on a non-archival node. Set `Archival: true` in the node config or omit `require-origin` from the request.
+Hooks without `initial-state` backfill from genesis, which requires archival mode. Either set `Archival: true` in the node config or provide an `initial-state` to skip backfill.
+
+### "hook is still catching up" (503)
+
+The hook is backfilling from genesis and has not yet processed all historical blocks. State and history are unavailable until backfill completes. Wait for the hook to finish catching up and retry.
 
 ### "hook did not emit ARC4 ABI log output"
 
