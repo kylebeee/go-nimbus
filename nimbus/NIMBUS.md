@@ -291,10 +291,18 @@ class BlockCounter extends HookContract {
 }
 ```
 
-Compile with the AlgoKit CLI:
+Compile with the AlgoKit CLI and deploy using the client:
 
 ```bash
 algokit compile ts counter.algo.ts --out-dir out
+```
+
+```typescript
+import { NimbusClient } from '@akitafoundation/nimbus-hooks'
+import spec from './out/BlockCounter.arc56.json'
+
+const client = new NimbusClient('http://localhost:4101', 'aaa...')
+await client.deploy({ id: 'block-counter', appSpec: spec })
 ```
 
 See the [nimbus-hooks](https://github.com/kylebeee/nimbus-hooks) repository for the full SDK, TypeScript client, and additional examples.
@@ -677,33 +685,30 @@ curl -s -X POST \
 
 This requires the node to be running in archival mode. The hook will be evaluated against every block from round 1 to the current round before it begins processing new blocks.
 
-### Reading State from JavaScript
+### Reading State from TypeScript
 
-```javascript
-const NIMBUS_URL = "http://localhost:4101";
-const TOKEN = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+Using the `@akitafoundation/nimbus-hooks` client:
+
+```typescript
+import { NimbusClient } from '@akitafoundation/nimbus-hooks'
+
+const client = new NimbusClient(
+  'http://localhost:4101',
+  'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+)
 
 // Get latest state
-const response = await fetch(`${NIMBUS_URL}/v2/nimbus/hooks/counter/state`, {
-  headers: { "X-Algo-API-Token": TOKEN }
-});
-const data = await response.json();
-console.log("Round:", data.round);
-console.log("State (base64):", data.state);
+const state = await client.getState('counter')
+console.log('Round:', state.round)
 
 // Decode 8-byte big-endian counter
-const stateBytes = Uint8Array.from(atob(data.state), c => c.charCodeAt(0));
-const view = new DataView(stateBytes.buffer);
-const counter = view.getBigUint64(0);
-console.log("Counter value:", counter);
+const counter = NimbusClient.decodeUint64(state.state)
+console.log('Counter value:', counter)
 
 // Verify chain integrity
-const verifyResponse = await fetch(`${NIMBUS_URL}/v2/nimbus/hooks/counter/verify`, {
-  headers: { "X-Algo-API-Token": TOKEN }
-});
-const result = await verifyResponse.json();
-console.log("Chain valid:", result.valid);
-console.log("Entries:", result.entries);
+const result = await client.verify('counter')
+console.log('Chain valid:', result.valid)
+console.log('Entries:', result.entries)
 ```
 
 ### Reading State from Python
