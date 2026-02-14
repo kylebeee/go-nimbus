@@ -191,8 +191,8 @@ func (m *HookManager) CreateHook(def HookDefinition) error {
 	if len(def.Program) == 0 {
 		return errors.New("hook program is required")
 	}
-	if def.RequireOrigin && !m.cfg.Archival {
-		return errors.New("archival mode required for origin hooks")
+	if (def.RequireOrigin || len(def.InitialState) == 0) && !m.cfg.Archival {
+		return errors.New("archival mode required for hooks without initial state")
 	}
 
 	m.mu.Lock()
@@ -218,8 +218,12 @@ func (m *HookManager) CreateHook(def HookDefinition) error {
 		return err
 	}
 
-	if def.RequireOrigin {
-		return m.backfillHook(def.ID)
+	if def.RequireOrigin || len(def.InitialState) == 0 {
+		go func() {
+			if err := m.backfillHook(def.ID); err != nil {
+				m.log.Warnf("nimbus hook %s backfill failed: %v", def.ID, err)
+			}
+		}()
 	}
 	return nil
 }
