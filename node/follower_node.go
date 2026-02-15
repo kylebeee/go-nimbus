@@ -136,8 +136,14 @@ func MakeFollower(log logging.Logger, rootDir string, cfg config.Local, phoneboo
 	node.catchupBlockAuth = blockAuthenticatorImpl{Ledger: node.ledger, AsyncVoteVerifier: agreement.MakeAsyncVoteVerifier(node.lowPriorityCryptoVerificationPool)}
 	node.catchupService = catchup.MakeService(node.log, node.config, p2pNode, node.ledger, node.catchupBlockAuth, make(chan catchup.PendingUnmatchedCertificate), node.lowPriorityCryptoVerificationPool)
 
-	// Initialize sync round to the latest db round + 1 so that nothing falls out of the cache on Start
-	err = node.SetSyncRound(node.Ledger().LatestTrackerCommitted() + 1)
+	if cfg.EnableNimbusMode {
+		// In nimbus mode, disable the sync round limit so the follower syncs all blocks.
+		// Without this, the follower stops syncing after MaxAcctLookback rounds.
+		err = node.catchupService.SetDisableSyncRound(0)
+	} else {
+		// Initialize sync round to the latest db round + 1 so that nothing falls out of the cache on Start
+		err = node.SetSyncRound(node.Ledger().LatestTrackerCommitted() + 1)
+	}
 	if err != nil {
 		log.Errorf("unable to set sync round to Ledger.DBRound %v", err)
 		return nil, err

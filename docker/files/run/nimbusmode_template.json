@@ -45,7 +45,7 @@
     {
       "Name": "nimbus",
       "IsRelay": false,
-      "ConfigJSONOverride": "{\"EnableNimbusMode\":true,\"EnableFollowMode\":true,\"Archival\":true,\"EnableDeveloperAPI\":true,\"EnableTxnEvalTracer\":true,\"EndpointAddress\":\"0.0.0.0:8081\"}"
+      "ConfigJSONOverride": "{\"EnableNimbusMode\":true,\"EnableFollowMode\":true,\"Archival\":true,\"EnableDeveloperAPI\":true,\"EnableTxnEvalTracer\":true,\"CatchupBlockValidateMode\":1,\"EndpointAddress\":\"0.0.0.0:8081\"}"
     }
   ]
 }

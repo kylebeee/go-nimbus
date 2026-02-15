@@ -317,7 +317,7 @@ func (m *HookManager) processBlock(block bookkeeping.Block) {
 
 	for _, def := range hooks {
 		prev := m.getLatestState(def.ID)
-		next := m.evaluateHook(def, block, prev)
+		next := m.evaluateHook(def, block, prev, block.BlockHeader.Round)
 		m.mu.Lock()
 		m.latest[def.ID] = next
 		m.mu.Unlock()
@@ -337,7 +337,7 @@ func (m *HookManager) getLatestState(id string) HookState {
 	return state
 }
 
-func (m *HookManager) evaluateHook(def HookDefinition, block bookkeeping.Block, prev HookState) HookState {
+func (m *HookManager) evaluateHook(def HookDefinition, block bookkeeping.Block, prev HookState, simRound basics.Round) HookState {
 	hdr := block.BlockHeader
 	now := time.Now()
 	state := HookState{
@@ -358,7 +358,7 @@ func (m *HookManager) evaluateHook(def HookDefinition, block bookkeeping.Block, 
 	tx := txntest.Txn{
 		Type:              protocol.ApplicationCallTx,
 		Sender:            hdr.FeeSink,
-		FirstValid:        hdr.Round,
+		FirstValid:        simRound,
 		GenesisID:         m.genesisID,
 		GenesisHash:       m.genesisHash,
 		ApplicationID:     0,
@@ -371,7 +371,7 @@ func (m *HookManager) evaluateHook(def HookDefinition, block bookkeeping.Block, 
 	stxn := tx.SignedTxn()
 
 	request := simulation.Request{
-		Round:                hdr.Round,
+		Round:                simRound,
 		TxnGroups:            [][]transactions.SignedTxn{{stxn}},
 		AllowEmptySignatures: true,
 		FixSigners:           true,
@@ -442,7 +442,11 @@ func (m *HookManager) backfillHook(id string) error {
 			return err
 		}
 		prev := m.getLatestState(def.ID)
-		next := m.evaluateHook(def, block, prev)
+		// Use the latest round for simulation so the evaluator can access
+		// current ledger state. Hooks don't read on-chain state; they only
+		// use the args we provide, so the simulation round doesn't affect
+		// the result. The receipt still uses the historical block header.
+		next := m.evaluateHook(def, block, prev, latestRound)
 		m.mu.Lock()
 		m.latest[def.ID] = next
 		m.mu.Unlock()
